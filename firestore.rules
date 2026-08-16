@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 주의: 이 프로젝트는 아직 실제 Firebase Auth를 연결하지 않았습니다.
+    // 화면의 "로그인"은 프론트엔드 목업 사용자 컨텍스트(useCurrentUser)가 흉내낸 것으로,
+    // request.auth가 실제로 채워지지 않습니다.
+    // 아래 규칙은 실제 Firebase Auth 연동 이후를 겨냥한 "목표" 규칙이며,
+    // 이번 단계에는 강제되지 않습니다 (학생 간 열람 차단도 현재는 클라이언트 쿼리 필터 수준입니다).
+    // 이번 단계에 실제로 배포할 규칙은 파일 맨 아래 "개발용 규칙"을 사용하세요.
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isTeacherOf(classId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/classes/$(classId)).data.teacherId == request.auth.uid;
+    }
+
+    match /profiles/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isTeacherOf(classId) || isSignedIn(); // 학생 참여 시 studentIds 갱신 허용
+      allow delete: if isTeacherOf(classId);
+    }
+
+    match /lists/{listId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isTeacherOf(resource.data.classId));
+    }
+
+    match /cards/{cardId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isTeacherOf(resource.data.classId));
+    }
+  }
+}
+
+// ---- 이번 단계(목업 인증) 개발용 규칙 ----
+// Firebase 콘솔 > Firestore Database > 규칙 탭에 아래 내용을 대신 붙여넣어 사용하세요.
+// 실제 Auth 연동 전까지는 위 규칙이 항상 거부되므로 개발이 불가능합니다.
+// 반드시 학습/개발 용도로만 사용하고, 실서비스에는 배포하지 마세요.
+//
+// rules_version = '2';
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+//     match /{document=**} {
+//       allow read, write: if true;
+//     }
+//   }
+// }
